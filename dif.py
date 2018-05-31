@@ -22,9 +22,16 @@ class InvalidAccoutingInfo(Exception):
 class ValuationDateNotFound(Exception):
 	pass
 
+# To do: read exchange rate in each section and add to records.
 
 
 def readHolding(file):
+	"""
+	file: the full path to the China Life trustee's DIF file.
+
+	output: [list] a list of records in DIF portfolio, including cash,
+		bond, equity, forwards, futures, fixed deposit etc.
+	"""
 	ws = open_workbook(filename=file).sheet_by_name('Portfolio Val.')
 	sections = linesToSections(worksheetToLines(ws))
 	valuationDate = getValuationDate(sections[0])
@@ -32,11 +39,12 @@ def readHolding(file):
 	for section in sections[1:]:
 		records = chain(records, sectionToRecords(section))
 
-	def addValuationDate(record):
+	def addPortfolioInfo(record):
 		record['valuation_date'] = valuationDate
+		record['portfolio'] = '19437'
 		return record
 
-	return map(addValuationDate, records)
+	return list(map(addPortfolioInfo, records))
 
 
 
@@ -143,8 +151,20 @@ def sectionToRecords(lines):
 	headerLines, holdingLines = divideSection(lines)
 	records = linesToRecords(sectionHeader(headerLines), holdingLines)
 
+	def extractId(text):
+		m = re.match('\(([A-Z0-9]{5,12})\)', text)
+		if m:
+			return m.group(1)
+		else:
+			logger.error('extractId(): find id failed.')
+			raise ValueError('text=\'{0}\''.format(text))
+
 	def addSecurityInfo(record):
 		record['type'] = sectionType
+		if sectionType in ('bond', 'equity'):
+			securityId = extractId(record['description'])
+			idType = 'isin' if sectionType == 'bond' else 'ticker'
+			record[idType] = securityId
 		return record
 
 	def nonEmptyPosition(record):
