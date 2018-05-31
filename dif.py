@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 
 
 
+class InvalidAccoutingInfo(Exception):
+	pass
+
+
+
 def worksheetToLines(ws):
 	"""
 	wb: a worksheet object (from xlrd.open_workbook)
@@ -86,56 +91,221 @@ def linesToSections(lines):
 
 
 
-def toSubSections(section):
+def sectionToRecords(lines):
 	"""
-	section: [list] a list of lines in a section.
+	lines: [list] a list of lines of a section.
+
+	output: [iterable] a list of records (dictionary object) in the
+		section.
+	"""
+	sectionType = getSectionType(lines[0])
+	headerLines, holdingLines = divideSection(lines)
+
+	def addSectionType(record):
+		record['type'] = sectionType
+		return record
+
+	def nonEmptyPosition(record):
+		if sectionType in ('bond', 'equity') and record['quantity'] in (0, ''):
+			return False
+		else:
+			return True
+
+	return map(addSectionType, 
+				filter(nonEmptyPosition, linesToRecords(sectionHeader(headerLines), holdingLines)))
+
+
+
+def getSectionType(line):
+	"""
+	line: the first line of a section
+
+	output: a string representing the type of the section, i.e., cash,
+		bond, equity, futures
+	"""
+	if re.search('\sCash\s', line[0]):
+		return 'cash'
+	elif re.search('\sBroker Account\s', line[0]):
+		return 'broker account cash'
+	elif re.search('\sDebt Securities\s', line[0]):
+		return 'bond'
+	elif re.search('\sEquities\s', line[0]):
+		return 'equity'
+	elif re.search('\sFutures\s', line[0]):
+		return 'futures'
+	else:
+		logger.error('getSectionType(): invalid type {0}'.format(line[0]))
+		raise ValueError()
+
+
+
+def linesToRecords(headers, lines):
+	"""
+	lines: [list] a list of lines in the sub section, the first line being
+		the accounting treatment (like (i) held to maturity), the rest are
+		holdings
+
+	output: [iterable] a list of records in the sub section, with empty
+		positions filtered out.
+	"""
+	try:
+		accounting = getAccountingTreatment(lines[0])
+		startingLine = 1
+	except InvalidAccoutingInfo:
+		accounting = ''
+		startingLine = 0
+
+	def lineToRecord(line):
+		headerValuePairs = filter(lambda x: x[0] != '', zip(headers, line))
+		return {key: value for (key, value) in headerValuePairs}
+
+	def addAccoutingInfo(record):
+		record['accounting'] = accounting
+		return record
+
+	return map(addAccoutingInfo, map(lineToRecord, lines[startingLine:]))
+
+
+
+def getAccountingTreatment(line):
+	"""
+	line: the first line of a sub section
+
+	output: a string for the sub section's accouting treatment, i..e, htm,
+		afs, trading. Or raise an exception if not found.
+	"""
+	if line[0].startswith('(i) Trading'):
+		return 'trading'
+	elif line[0].startswith('(i) Held to Maturity'):
+		return 'htm'
+	else:
+		raise InvalidAccoutingInfo()
+
+
+
+def divideSection(lines):
+	"""
+	lines: [list] a list of lines in a section.
 
 	output: [list] a list of sub sections in this section.
 
-	The structure of a section is like below:
+	A section can be divided into 2 sub sections:
 
 	sub section 0: header lines (up to 'Description')
-	sub section 1: holdings (in between '(i) held to maturity' and 'total')
-	sub section 2: holdings (in between '(ii) held to maturity' and 'total')
-	etc.
-
-	In the above, 'held to maturiy' can be replaced by 'trading' or other
-	accounting treatment.
+	sub section 1: entries (the rest, up to 'total')
 	"""
 	def findHeaderLines():
-		for i in range(len(section)):
-			if section[i][0].startswith('Description'):
+		for i in range(len(lines)):
+			if lines[i][0].startswith('Description'):
 				return i
-		raise ValueError('toSubSections(): header line not found')
+		raise ValueError('divideSection(): header line not found')
 
 	i = findHeaderLines()
-	subSections = [[section[i-2], section[i-1], section[i]]]
-
-	def startOfHolding(text):
-		"""
-		Tell whether the text string indicates start of a holding sub section
-		"""
-		return bool(re.match('\([ivx]+\)\s', text))
+	headerLines = [lines[i-1], lines[i]]	# 2 lines for headers
 
 	def endOfHolding(text):
-		"""
-		Tell whether the text string indicates end of a holding sub section
-		"""
 		return text.startswith('Total (總額)')
 	
-	tempSub = []
-	for line in section[i+1:]:
-		if tempSub == [] and not startOfHolding(line[0]):
-			continue
-		elif tempSub == [] and startOfHolding(line[0]):
-			tempSub.append(line)
-		elif tempSub != [] and endOfHolding(line[0]):
-			subSections.append(tempSub)
-			tempSub = []
+	holdingLines = []
+	for line in lines[i+1:]:
+		if endOfHolding(line[0]):
+			break
 		else:
-			tempSub.append(line)
+			holdingLines.append(line)
 
-	return subSections
+	return headerLines, holdingLines
+
+
+
+def sectionHeader(lines):
+	"""
+	lines: [list] a list of lines (2 lines) reprenting the headers
+
+	output: [list] a list of header as string
+	"""
+	headerMap = {
+		('', ''): '',
+		('項目', 'Description'): 'description',
+
+		# Bond fields
+		('票面值', 'Par Amt'):'quantity',
+		('幣值', 'CCY'):'currency',
+		('上市 (是/否)', 'Listed (Y/N)'):'is_listed',
+		('Primary', 'Exchange'):'listed_location',
+		('(AVG) FX', 'for TXN'):'fx_on_trade_day',
+		('Int.', 'Rate (%)'):'coupon_rate',
+		('Int.', 'Start Day'):'coupon_start_date',
+		('到期日', 'Maturity'):'maturity_date',
+		('Cost', '(%)'):'average_cost',
+		('Price', '(%)'):'price',
+		('(Amortized)', '(%)'):'amortized_cost',
+		('成本價', 'Book Cost'):'book_cost',
+		('Int.', 'Bought'):'interest_bought',
+		('市價', 'M. Value'):'market_value',
+		('Adjusted Value', '(Amortized)'):'amortized_value',
+		('應收利息', 'Accr. Int.'):'accrued_interest',
+		('Year-End', 'Amortization'):'amortized_gain_loss',
+		('Gain/(Loss)', 'M. Value'):'market_gain_loss',
+		('FX', 'HKD Equiv.'):'fx_gain_loss_hkd',
+		('%', '(Fund)'): 'percentage_of_fund',
+
+		# for trustee Macau fund
+		('', 'Listed (Y/N)'):'is_listed',
+		('Location', 'of Listed'):'listed_location',
+		('FX', 'MOP Equiv.'):'fx_gain_loss_mop',
+
+
+		# Equity fields
+		('股數', 'Share'):'quantity',
+		('Location', 'of Listed'):'listed_location',
+		('最後交易日', 'Latest V.D.'):'last_trade_date',
+		('Avg.', 'Price'):'average_cost',
+		('Market', 'Price'):'price',
+
+		# for trustee Macau fund
+		('上市 (是/否)', 'Listed (Y/N)'):'is_listed',
+
+
+		# Cash fields
+		('戶口號碼', 'Account No.'): 'account_number',
+		('FX', 'for TXN'):'fx_on_trade_day',
+
+		# Futures fields
+		('合約數量', 'No. of Contracts'): 'quantity',
+		('', 'Long/ Short'): 'long_short',
+		('', 'Trade Date'): 'trade_date',
+
+
+		# headers to ignore (after header column % of fund)
+		(2004.0, '購入'): '',
+		('Yield', '%'): '',
+		(37986.0, 'Market Price'): ''
+	}
+
+	try:
+		return [headerMap[item] for item in zip(*lines)]
+	except KeyError:
+		logger.exception('sectionHeader(): header not found')
+		raise
+
+
+
+def recordsToRows(records):
+	"""
+	records: a list of position records with the same set of headers, 
+		such as HTM bonds, or AFS bonds, equitys, cash entries.
+
+	headers: the headers of the records
+	
+	output: a list of rows ready to be written to csv, with the first
+		row being headers, the rest being values from each record.
+		headers.
+	"""
+	headers = list(records[0].keys())
+	def toValueList(record):
+		return [record[header] for header in headers]
+
+	return [headers] + [toValueList(record) for record in records]
 
 
 
@@ -163,16 +333,22 @@ if __name__ == '__main__':
 	# end of htmSection()
 	# writeCsv('htm section.csv', htmSection())
 
-	def htmSubSectionHeader():
-		subSections = toSubSections(htmSection())
-		return subSections[0]
+	def htmHeaderLines():
+		headerLines, holdingLines = divideSection(htmSection())
+		return headerLines
 
-	def htmSubSectionHolding():
-		subSections = toSubSections(htmSection())
-		return subSections[1]
+	def htmHoldingLines():
+		headerLines, holdingLines = divideSection(htmSection())
+		return holdingLines
 
-	# writeCsv('htm subsection header.csv', htmSubSectionHeader())
-	# writeCsv('htm subsection holding.csv', htmSubSectionHolding())
+	# writeCsv('htm subsection header.csv', htmHeaderLines())
+	# writeCsv('htm subsection holding.csv', htmHoldingLines())
 
+	# print(sectionHeader(htmHeaderLines()))
+
+	def htmRecords():
+		return sectionToRecords(htmSection())
+
+	writeCsv('htm records.csv', recordsToRows(list(htmRecords())))
 
 
