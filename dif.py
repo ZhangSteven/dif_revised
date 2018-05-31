@@ -86,6 +86,59 @@ def linesToSections(lines):
 
 
 
+def toSubSections(section):
+	"""
+	section: [list] a list of lines in a section.
+
+	output: [list] a list of sub sections in this section.
+
+	The structure of a section is like below:
+
+	sub section 0: header lines (up to 'Description')
+	sub section 1: holdings (in between '(i) held to maturity' and 'total')
+	sub section 2: holdings (in between '(ii) held to maturity' and 'total')
+	etc.
+
+	In the above, 'held to maturiy' can be replaced by 'trading' or other
+	accounting treatment.
+	"""
+	def findHeaderLines():
+		for i in range(len(section)):
+			if section[i][0].startswith('Description'):
+				return i
+		raise ValueError('toSubSections(): header line not found')
+
+	i = findHeaderLines()
+	subSections = [[section[i-2], section[i-1], section[i]]]
+
+	def startOfHolding(text):
+		"""
+		Tell whether the text string indicates start of a holding sub section
+		"""
+		return bool(re.match('\([ivx]+\)\s', text))
+
+	def endOfHolding(text):
+		"""
+		Tell whether the text string indicates end of a holding sub section
+		"""
+		return text.startswith('Total (總額)')
+	
+	tempSub = []
+	for line in section[i+1:]:
+		if tempSub == [] and not startOfHolding(line[0]):
+			continue
+		elif tempSub == [] and startOfHolding(line[0]):
+			tempSub.append(line)
+		elif tempSub != [] and endOfHolding(line[0]):
+			subSections.append(tempSub)
+			tempSub = []
+		else:
+			tempSub.append(line)
+
+	return subSections
+
+
+
 def writeCsv(fileName, rows):
 	with open(fileName, 'w', newline='') as csvfile:
 		file_writer = csv.writer(csvfile)
@@ -101,16 +154,25 @@ if __name__ == '__main__':
 	import logging.config
 	logging.config.fileConfig('logging.config', disable_existing_loggers=False)
 
-	def writeSection():
+	def htmSection():
 		file = join(get_current_path(), 'samples', 
 						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
 		ws = open_workbook(filename=file).sheet_by_name('Portfolio Val.')
 		sections = linesToSections(worksheetToLines(ws))
-		writeCsv('htm bond.csv', sections[8])
-	# end of writeSection()
-	writeSection()
+		return sections[8]
+	# end of htmSection()
+	# writeCsv('htm section.csv', htmSection())
 
+	def htmSubSectionHeader():
+		subSections = toSubSections(htmSection())
+		return subSections[0]
 
+	def htmSubSectionHolding():
+		subSections = toSubSections(htmSection())
+		return subSections[1]
+
+	# writeCsv('htm subsection header.csv', htmSubSectionHeader())
+	# writeCsv('htm subsection holding.csv', htmSubSectionHolding())
 
 
 
