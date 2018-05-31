@@ -36,7 +36,7 @@ def readHolding(file):
 		record['valuation_date'] = valuationDate
 		return record
 
-	return list(map(addValuationDate, records))
+	return map(addValuationDate, records)
 
 
 
@@ -143,7 +143,7 @@ def sectionToRecords(lines):
 	headerLines, holdingLines = divideSection(lines)
 	records = linesToRecords(sectionHeader(headerLines), holdingLines)
 
-	def addSectionType(record):
+	def addSecurityInfo(record):
 		record['type'] = sectionType
 		return record
 
@@ -165,7 +165,7 @@ def sectionToRecords(lines):
 				record[key] = dateToString(ordinalToDate(record[key]))
 		return record
 
-	return map(toDateString, map(addSectionType, filter(nonEmptyPosition, records)))
+	return map(toDateString, map(addSecurityInfo, filter(nonEmptyPosition, records)))
 
 
 
