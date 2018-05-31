@@ -19,6 +19,47 @@ logger = logging.getLogger(__name__)
 class InvalidAccoutingInfo(Exception):
 	pass
 
+class ValuationDateNotFound(Exception):
+	pass
+
+
+
+def readHolding(file):
+	ws = open_workbook(filename=file).sheet_by_name('Portfolio Val.')
+	sections = linesToSections(worksheetToLines(ws))
+	valuationDate = getValuationDate(sections[0])
+	records = []
+	for section in sections[1:]:
+		records = chain(records, sectionToRecords(section))
+
+	def addValuationDate(record):
+		record['valuation_date'] = valuationDate
+		return record
+
+	return list(map(addValuationDate, records))
+
+
+
+def getValuationDate(lines):
+	"""
+	lines: [list] a list of lines in the first section, that contains
+		fund name, valuation date etc.
+
+	output: a string in "yyyy-mm-dd" representing the date
+	"""
+	def getDateFromLine(line):
+		i = 0
+		for item in line:
+			if isinstance(item, float):
+				i = i + 1
+			if i == 2:
+				return dateToString(ordinalToDate(item))
+
+		raise ValuationDateNotFound()
+
+	for line in lines:
+		if line[0].startswith('Valuation Period'):
+			return getDateFromLine(line)
 
 
 def worksheetToLines(ws):
@@ -100,19 +141,31 @@ def sectionToRecords(lines):
 	"""
 	sectionType = getSectionType(lines[0])
 	headerLines, holdingLines = divideSection(lines)
+	records = linesToRecords(sectionHeader(headerLines), holdingLines)
 
 	def addSectionType(record):
 		record['type'] = sectionType
 		return record
 
 	def nonEmptyPosition(record):
-		if sectionType in ('bond', 'equity') and record['quantity'] in (0, ''):
+		if sectionType in ('bond', 'equity', 'futures') and record['quantity'] in (0, ''):
+			return False
+		elif record['book_cost'] in (0, ''):
 			return False
 		else:
 			return True
 
-	return map(addSectionType, 
-				filter(nonEmptyPosition, linesToRecords(sectionHeader(headerLines), holdingLines)))
+	def toDateString(record):
+		if record['type'] == 'futures':
+			# FIXME: futures' maturity date is different, don't know what to do
+			return record
+
+		for key in ('coupon_start_date', 'maturity_date', 'last_trade_date', 'trade_date'):
+			if key in record:
+				record[key] = dateToString(ordinalToDate(record[key]))
+		return record
+
+	return map(toDateString, map(addSectionType, filter(nonEmptyPosition, records)))
 
 
 
@@ -133,6 +186,10 @@ def getSectionType(line):
 		return 'equity'
 	elif re.search('\sFutures\s', line[0]):
 		return 'futures'
+	elif re.search('\sForwards\s', line[0]):
+		return 'forwards'
+	elif re.search('\sFixed Deposit\s', line[0]):
+		return 'fixed deposit cash'
 	else:
 		logger.error('getSectionType(): invalid type {0}'.format(line[0]))
 		raise ValueError()
@@ -269,11 +326,18 @@ def sectionHeader(lines):
 		# Cash fields
 		('戶口號碼', 'Account No.'): 'account_number',
 		('FX', 'for TXN'):'fx_on_trade_day',
+		('FX', 'at TXN'):'fx_on_trade_day',
+		('市值', 'M. Value'): 'market_value',
 
 		# Futures fields
 		('合約數量', 'No. of Contracts'): 'quantity',
 		('', 'Long/ Short'): 'long_short',
 		('', 'Trade Date'): 'trade_date',
+
+		# Fixed Deposit fields
+		('FX', 'at V.D.'): 'fx_on_trade_day',
+		('交易日', 'V.D.'): 'trade_date',
+		('Int.', 'Rate(%)'): 'interest_rate',
 
 
 		# headers to ignore (after header column % of fund)
@@ -301,11 +365,26 @@ def recordsToRows(records):
 		row being headers, the rest being values from each record.
 		headers.
 	"""
+	if not records:
+		return []
+
 	headers = list(records[0].keys())
 	def toValueList(record):
 		return [record[header] for header in headers]
 
 	return [headers] + [toValueList(record) for record in records]
+
+
+
+def ordinalToDate(ordinal):
+	# from: https://stackoverflow.com/a/31359287
+	return datetime.fromordinal(datetime(1900, 1, 1).toordinal() + 
+									int(ordinal) - 2)
+
+
+
+def dateToString(dt):
+	return str(dt.year) + '-' + str(dt.month) + '-' + str(dt.day)
 
 
 
@@ -324,6 +403,13 @@ if __name__ == '__main__':
 	import logging.config
 	logging.config.fileConfig('logging.config', disable_existing_loggers=False)
 
+	def cashSection():
+		file = join(get_current_path(), 'samples', 
+						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
+		ws = open_workbook(filename=file).sheet_by_name('Portfolio Val.')
+		sections = linesToSections(worksheetToLines(ws))
+		return sections[1]
+
 	def htmSection():
 		file = join(get_current_path(), 'samples', 
 						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
@@ -332,6 +418,39 @@ if __name__ == '__main__':
 		return sections[8]
 	# end of htmSection()
 	# writeCsv('htm section.csv', htmSection())
+
+	def equitySection():
+		file = join(get_current_path(), 'samples', 
+						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
+		ws = open_workbook(filename=file).sheet_by_name('Portfolio Val.')
+		sections = linesToSections(worksheetToLines(ws))
+		return sections[14]
+
+	# writeCsv('equity section.csv', equitySection())
+
+	def forwardsSection():
+		file = join(get_current_path(), 'samples', 
+						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
+		ws = open_workbook(filename=file).sheet_by_name('Portfolio Val.')
+		sections = linesToSections(worksheetToLines(ws))
+		return sections[16]
+
+	def fixedDepositSection():
+		file = join(get_current_path(), 'samples', 
+						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
+		ws = open_workbook(filename=file).sheet_by_name('Portfolio Val.')
+		sections = linesToSections(worksheetToLines(ws))
+		return sections[18]
+
+	def futuresSection():
+		file = join(get_current_path(), 'samples', 
+						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
+		ws = open_workbook(filename=file).sheet_by_name('Portfolio Val.')
+		sections = linesToSections(worksheetToLines(ws))
+		return sections[19]
+
+	# writeCsv('equity section.csv', equitySection())
+
 
 	def htmHeaderLines():
 		headerLines, holdingLines = divideSection(htmSection())
@@ -349,6 +468,24 @@ if __name__ == '__main__':
 	def htmRecords():
 		return sectionToRecords(htmSection())
 
-	writeCsv('htm records.csv', recordsToRows(list(htmRecords())))
+	def equityRecords():
+		return sectionToRecords(equitySection())
 
+	# writeCsv('htm records.csv', recordsToRows(list(htmRecords())))
+	# writeCsv('equity records.csv', recordsToRows(list(equityRecords())))
+	# writeCsv('forwards records.csv', recordsToRows(list(sectionToRecords(forwardsSection()))))
+	# writeCsv('fixed deposit records.csv', recordsToRows(list(sectionToRecords(fixedDepositSection()))))
+	# writeCsv('futures records.csv', recordsToRows(list(sectionToRecords(futuresSection()))))
+	# writeCsv('cash records.csv', recordsToRows(list(sectionToRecords(cashSection()))))
 
+	def allRecords():
+		file = join(get_current_path(), 'samples', 
+						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
+		return readHolding(file)
+
+	def tradingBond(record):
+		if record['type'] == 'bond' and record['accounting'] == 'trading':
+			return True
+		return False
+
+	writeCsv('all trading bond records.csv', recordsToRows(list(filter(tradingBond, allRecords()))))
