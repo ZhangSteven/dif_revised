@@ -3,8 +3,9 @@
 
 import unittest2
 from os.path import join
+from xlrd import open_workbook
 from dif_revised.utility import get_current_path
-from dif_revised.dif import readHolding
+from dif_revised.dif import readHolding, readSummary
 
 
 
@@ -28,6 +29,16 @@ def cash(record):
 		return True
 	return False
 
+def futures(record):
+	if record['type'] == 'futures':
+		return True
+	return False
+
+def fixedDeposit(record):
+	if record['type'] == 'fixed desposit':
+		return True
+	return False
+
 
 
 class TestDif(unittest2.TestCase):
@@ -41,7 +52,9 @@ class TestDif(unittest2.TestCase):
 		"""
 		file = join(get_current_path(), 'samples', 
 						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
-		TestDif.records = readHolding(file)
+		wb = open_workbook(filename=file)
+		TestDif.records = readHolding(wb.sheet_by_name('Portfolio Val.'))
+		TestDif.summary = readSummary(wb.sheet_by_name('Portfolio Sum.'))
 
 	@classmethod
 	def tearDownClass(TestDif):
@@ -74,6 +87,30 @@ class TestDif(unittest2.TestCase):
 		records = list(filter(cash, TestDif.records))
 		self.assertEqual(len(records), 4)
 		self.verifyCash(records[3])
+
+
+
+	def testFutures(self):
+		records = list(filter(futures, TestDif.records))
+		self.assertEqual(len(records), 1)
+		self.verifyFutures(records[0])
+
+
+
+	def testFixedDeposit(self):
+		records = list(filter(fixedDeposit, TestDif.records))
+		self.assertEqual(len(records), 0)
+
+
+
+	def testSummary(self):
+		summary = TestDif.summary
+		self.assertEqual(len(summary), 5)
+		self.assertAlmostEqual(summary['cash'], 99644780.69, 2)
+		self.assertAlmostEqual(summary['bond'], 3930560458.64)
+		self.assertAlmostEqual(summary['equity'], 219653473.09, 2)
+		self.assertEqual(summary['fixed deposit'], 0)
+		self.assertAlmostEqual(summary['futures'], -411625.88, 2)
 
 
 
@@ -129,3 +166,13 @@ class TestDif(unittest2.TestCase):
 		self.assertEqual(record['account_number'], '045621UE7')
 		self.assertAlmostEqual(record['book_cost'], 3938502.58, 6)
 		self.assertAlmostEqual(record['exchange_rate'], 7.8452, 6)
+
+
+
+	def verifyFutures(self, record):
+		self.assertEqual(record['description'], 'US 10 Years Note (CBT) JUN 18')
+		self.assertEqual(record['quantity'], 300)
+		self.assertEqual(record['currency'], 'USD')
+		self.assertEqual(record['long_short'], 'Short')
+		# self.assertEqual(record['trade_date'], '2018-5-28')	# doesn't work
+		self.assertEqual(record['market_gain_loss'], -52468.5)

@@ -4,6 +4,8 @@
 # a rewritten of the old DIF package, with a more clear structure. Structure
 # and code are similar to clamc_trustee package.
 # 
+# known bug: futures' position's maturity date is of different format and
+# 	not converted. search for 'FIXME'
 
 from xlrd import open_workbook
 from functools import reduce
@@ -27,14 +29,67 @@ class ExchangeRateNotFound(Exception):
 
 
 
-def readHolding(file):
+def readFile(file):
 	"""
-	file: the full path to the China Life trustee's DIF file.
+	ws: the full path to the China Life trustee's DIF file.
+
+	output: 
+	"""
+	wb = open_workbook(filename=file)
+	records = readHolding(wb.sheet_by_name('Portfolio Val.'))
+	summary = readSummary(wb.sheet_by_name('Portfolio Sum.'))
+	validate(records, summary)
+
+
+
+def readSummary(ws):
+	"""
+	ws: the excel worksheet for DIF holdings.
+
+	output: [dictionary] a summary containing the portfolio's total values,
+		such as cash, bond, equity, futures, fixed deposit
+	"""
+	lines = worksheetToLines(ws)
+	for i in range(0, len(lines)):	# find where summary starts
+		if lines[i][0] == 'Current Portfolio':
+			break
+
+	summary = {}
+	typeMap = {
+		'Cash (現金)': 'cash',
+		'Debt Securities (債務票據)': 'bond',
+		'Debt Amortization (債務攤銷)': 'bond amortization',
+		'Equities (股票)': 'equity',
+		'Fixed Deposit (定期存款)': 'fixed deposit',
+		'Futures (期貨合約)': 'futures'
+	}
+
+	def readValue(line):
+		i = 0
+		for item in line:
+			if isinstance(item, float):
+				i = i + 1
+			if i == 2:
+				return item
+
+	for line in lines[i+1:i+14]:
+		try:
+			summary[typeMap[line[0]]] = readValue(line)
+		except KeyError:
+			pass
+
+	summary['bond'] = summary['bond'] + summary.pop('bond amortization')
+	return summary
+
+
+
+def readHolding(ws):
+	"""
+	ws: the excel worksheet for DIF holdings.
 
 	output: [list] a list of records in DIF portfolio, including cash,
 		bond, equity, forwards, futures, fixed deposit etc.
 	"""
-	ws = open_workbook(filename=file).sheet_by_name('Portfolio Val.')
 	sections = linesToSections(worksheetToLines(ws))
 	valuationDate = getValuationDate(sections[0])
 	records = []
@@ -182,7 +237,8 @@ def sectionToRecords(lines):
 
 	def toDateString(record):
 		if record['type'] == 'futures':
-			# FIXME: futures' maturity date is different, don't know what to do
+			# FIXME: futures' maturity date is of different format, 
+			# cannot use the below ordinalToDate() function. So skip for now.
 			return record
 
 		for key in ('coupon_start_date', 'maturity_date', 'last_trade_date', 'trade_date'):
