@@ -115,9 +115,12 @@ class TestDif(unittest2.TestCase):
 
 
 	def testValidate(self):
-		validate(TestDif.records, TestDif.summary)
+		try:
+			validate(TestDif.records, TestDif.summary)
+		except:
+			self.fail('validate() failed')
 
-		
+
 
 	def verifyHtmBond(self, record):
 		self.assertEqual(record['valuation_date'], '2018-5-28')
