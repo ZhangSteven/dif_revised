@@ -22,7 +22,9 @@ class InvalidAccoutingInfo(Exception):
 class ValuationDateNotFound(Exception):
 	pass
 
-# To do: read exchange rate in each section and add to records.
+class ExchangeRateNotFound(Exception):
+	pass
+
 
 
 def readHolding(file):
@@ -148,8 +150,9 @@ def sectionToRecords(lines):
 		section.
 	"""
 	sectionType = getSectionType(lines[0])
-	headerLines, holdingLines = divideSection(lines)
+	headerLines, holdingLines, trailLines = divideSection(lines)
 	records = linesToRecords(sectionHeader(headerLines), holdingLines)
+	exchangeRate = getExchangeRate(trailLines)
 
 	def extractId(text):
 		m = re.match('\(([A-Z0-9]{5,12})\)', text)
@@ -165,6 +168,8 @@ def sectionToRecords(lines):
 			securityId = extractId(record['description'])
 			idType = 'isin' if sectionType == 'bond' else 'ticker'
 			record[idType] = securityId
+		if exchangeRate:
+			record['exchange_rate'] = exchangeRate
 		return record
 
 	def nonEmptyPosition(record):
@@ -216,6 +221,25 @@ def getSectionType(line):
 
 
 
+def getExchangeRate(lines):
+	"""
+	lines: lines in a section that may contain exchange rate info.
+
+	output: (float) exchange rate
+	"""
+	for line in lines:
+		if line[0].startswith('Exchange Rate'):
+			break
+
+	for item in line[1:]:
+		if isinstance(item, float) and item > 0:
+			return item
+
+	logger.warning('getExchangeRate(): FX not found in line {0}'.format(line))
+	return ''
+
+
+
 def linesToRecords(headers, lines):
 	"""
 	lines: [list] a list of lines in the sub section, the first line being
@@ -264,7 +288,11 @@ def divideSection(lines):
 	"""
 	lines: [list] a list of lines in a section.
 
-	output: [list] a list of sub sections in this section.
+	output: 3 sub lists divided from lines:
+		header lines: containing headers (2 lines)
+		holding lines: containing positions
+		remaining lines: containing total, exchange rate (if any),
+			etc.
 
 	A section can be divided into 2 sub sections:
 
@@ -277,20 +305,16 @@ def divideSection(lines):
 				return i
 		raise ValueError('divideSection(): header line not found')
 
-	i = findHeaderLines()
-	headerLines = [lines[i-1], lines[i]]	# 2 lines for headers
+	hIndex = findHeaderLines()
 
 	def endOfHolding(text):
 		return text.startswith('Total (總額)')
 	
-	holdingLines = []
-	for line in lines[i+1:]:
-		if endOfHolding(line[0]):
+	for i in range(hIndex+1, len(lines)):
+		if endOfHolding(lines[i][0]):
 			break
-		else:
-			holdingLines.append(line)
 
-	return headerLines, holdingLines
+	return lines[hIndex-1:hIndex+1], lines[hIndex+1:i], lines[i:]
 
 
 
