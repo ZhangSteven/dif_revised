@@ -5,7 +5,7 @@ import unittest2
 from os.path import join
 from xlrd import open_workbook
 from dif_revised.utility import get_current_path
-from dif_revised.dif import readHolding, readSummary
+from dif_revised.dif import readHolding, readSummary, validate
 
 
 
@@ -113,6 +113,11 @@ class TestDif(unittest2.TestCase):
 		self.assertAlmostEqual(summary['futures'], -411625.88, 2)
 
 
+
+	def testValidate(self):
+		validate(TestDif.records, TestDif.summary)
+
+		
 
 	def verifyHtmBond(self, record):
 		self.assertEqual(record['valuation_date'], '2018-5-28')

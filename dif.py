@@ -27,6 +27,12 @@ class ValuationDateNotFound(Exception):
 class ExchangeRateNotFound(Exception):
 	pass
 
+class InconsistentRecordSum(Exception):
+	pass
+
+class RecordTypeNotSupported(Exception):
+	pass
+
 
 
 def readFile(file):
@@ -39,6 +45,7 @@ def readFile(file):
 	records = readHolding(wb.sheet_by_name('Portfolio Val.'))
 	summary = readSummary(wb.sheet_by_name('Portfolio Sum.'))
 	validate(records, summary)
+	return records
 
 
 
@@ -80,6 +87,40 @@ def readSummary(ws):
 
 	summary['bond'] = summary['bond'] + summary.pop('bond amortization')
 	return summary
+
+
+
+def validate(records, summary):
+	def recordValue(record):
+		if record['type'] in ('cash', 'broker account cash', 'fixed deposit'):
+			return record['book_cost']
+		elif record['type'] == 'bond':
+			if record['accounting'] == 'htm':
+				return record['quantity'] / 100 * record['amortized_cost'] + record['accrued_interest']
+			else:
+				return record['quantity'] / 100 * record['price'] + record['accrued_interest']
+		elif record['type'] == 'futures':
+			return record['market_gain_loss']
+		elif record['type'] == 'equity':
+			if len(record['ticker']) == 12: # bond treated as equity
+				return record['quantity'] * record['price'] / 100
+			else:
+				return record['quantity'] * record['price']
+		else:
+			raise RecordTypeNotSupported('{0}'.format(record))
+
+	def sumUp(total, record):
+		return total + record['exchange_rate'] * recordValue(record)
+
+	for recordType in summary:
+		if recordType == 'cash':
+			tempRecords = filter(lambda r: r['type'] in ('cash', 'broker account cash'), records)
+		else:
+			tempRecords = filter(lambda r: r['type'] == recordType, records)
+
+		diff = summary[recordType] - reduce(sumUp, tempRecords, 0)
+		if abs(diff) > 0.2:
+			raise InconsistentRecordSum('validate(): diff {0} for {1}'.format(diff, recordType))
 
 
 
