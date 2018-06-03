@@ -102,7 +102,7 @@ def validate(records, summary):
 		elif record['type'] == 'futures':
 			return record['market_gain_loss']
 		elif record['type'] == 'equity':
-			if len(record['ticker']) == 12: # bond treated as equity
+			if 'isin' in record and not 'ticker' in record: # bond treated as equity
 				return record['quantity'] * record['price'] / 100
 			else:
 				return record['quantity'] * record['price']
@@ -293,13 +293,35 @@ def sectionToRecords(lines):
 			logger.error('extractId(): find id failed.')
 			raise ValueError('text=\'{0}\''.format(text))
 
+	def convertTicker(text):
+		"""
+		in DIF, the following is used to identify an equity (H0939), we
+		convert them to a ticker format more widely used.
+
+		H0939: 939 HK
+		H1186: 1186 HK
+		N0011: 11 HK
+		N2388: 2388 HK
+		"""
+		m = re.match('[HN]([0-9]{4})', text)
+		if m:
+			return str(int(m.group(1))) + ' HK'	# remove leading zeros
+		else:
+			logger.warning('convertTicker(): {0} is not converted'.format(text))
+			return text
+
 	def addSecurityInfo(record):
 		record['type'] = sectionType
 		if sectionCurrency and not 'currency' in record:
 			record['currency'] = sectionCurrency
 		if sectionType in ('bond', 'equity'):
 			securityId = extractId(record['description'])
-			idType = 'isin' if sectionType == 'bond' else 'ticker'
+			if sectionType == 'bond' or (sectionType == 'equity' and len(securityId) == 12):
+				idType = 'isin'
+			else:
+				idType = 'ticker'
+				securityId = convertTicker(securityId)
+
 			record[idType] = securityId
 		if exchangeRate:
 			record['exchange_rate'] = exchangeRate

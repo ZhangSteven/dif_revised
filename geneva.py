@@ -8,6 +8,62 @@ from dif_revised.dif import readFile, recordsToRows, writeCsv
 
 
 
+def writeAfsCsv(file, records):
+	"""
+	records: the holding records of the portfolio, including cash, bond,
+		equity, futures, etc.
+
+	file: the output csv file
+
+	output: no return value, the function writes the HTM bond records to
+		the output csv file with headers needed by Geneva reconciliation.
+	"""
+	afsHeaders = ['portfolio', 'date', 'custodian', 'ticker', 'isin',
+				'bloomberg_figi', 'name', 'currency', 'accounting_treatment',
+				'quantity', 'average_cost', 'price', 'book_cost', 'market_value',
+				'market_gain_loss', 'fx_gain_loss']
+
+	def afsPosition(record):
+		if record['type'] == 'equity' or \
+			(record['type'] == 'bond' and record['accounting'] == 'trading'):
+			return True
+		return False
+
+	def toAfsRecords(record):
+		"""
+		map an avaible for sale (AFS) or Trading position (can be either equity
+		or bond) to the record ready to be written to the csv.
+		"""
+		r = {}
+		r['date'] = record['valuation_date']
+		r['geneva_investment_id'] = ''
+		r['bloomberg_figi'] = ''
+		r['accounting_treatment'] = record['accounting'].upper()
+		r['name'] = record['description']
+		try:
+			r['fx_gain_loss'] = record['fx_gain_loss_hkd']
+		except KeyError:
+			r['fx_gain_loss'] = record['fx_gain_loss_mop']
+
+		for header in afsHeaders:
+			if header in ('date', 'geneva_investment_id', 'bloomberg_figi',
+							'accounting_treatment', 'name', 'fx_gain_loss'):
+				pass
+			elif header in ('ticker', 'isin'):
+				try:
+					r[header] = record[header]
+				except KeyError:
+					r[header] = ''
+			else:
+				r[header] = record[header]
+
+		return r
+	# end of toAfsRecords()
+	writeCsv(file,
+		recordsToRows(list(map(toAfsRecords, filter(afsPosition, records))), afsHeaders))
+
+
+
 def writeHtmCsv(file, records):
 	"""
 	records: the holding records of the portfolio, including cash, bond,
@@ -56,7 +112,6 @@ def writeHtmCsv(file, records):
 
 		return r
 	# end of toHtmRecords()
-
 	writeCsv(file, 
 		recordsToRows(list(map(toHtmRecords, filter(htmPosition, records))), htmHeaders))
 
@@ -68,10 +123,11 @@ if __name__ == '__main__':
 	import logging.config
 	logging.config.fileConfig('logging.config', disable_existing_loggers=False)
 
-	def htmCsv():
+	def getRecords():
 		file = join(get_current_path(), 'samples', 
 						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
-		outputFile = 'dif htm.csv'
-		writeHtmCsv(outputFile, readFile(file))
+		return readFile(file)
 
-	htmCsv()
+	difRecords = getRecords()
+	writeHtmCsv('dif htm.csv', difRecords)
+	writeAfsCsv('dif afs.csv', difRecords)

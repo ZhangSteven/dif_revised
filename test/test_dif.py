@@ -156,7 +156,8 @@ class TestDif(unittest2.TestCase):
 		It's a bond treated as equity
 		"""
 		self.assertEqual(record['valuation_date'], '2018-5-28')
-		self.assertEqual(record['ticker'], 'XS1328130197')
+		self.assertEqual(record['isin'], 'XS1328130197')
+		self.assertFalse('ticker' in record)
 		self.assertAlmostEqual(record['exchange_rate'], 7.8452, 6)
 		self.assertEqual(record['quantity'], 3924000)
 		self.assertEqual(record['currency'], 'USD')
