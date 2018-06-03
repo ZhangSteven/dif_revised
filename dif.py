@@ -132,26 +132,30 @@ def readHolding(ws):
 		bond, equity, forwards, futures, fixed deposit etc.
 	"""
 	sections = linesToSections(worksheetToLines(ws))
-	valuationDate = getValuationDate(sections[0])
+	valuationDate, portfolio, custodian = getPortfolioInfo(sections[0])
 	records = []
 	for section in sections[1:]:
 		records = chain(records, sectionToRecords(section))
 
 	def addPortfolioInfo(record):
 		record['valuation_date'] = valuationDate
-		record['portfolio'] = '19437'
+		record['portfolio'] = portfolio
+		record['custodian'] = custodian
 		return record
 
 	return list(map(addPortfolioInfo, records))
 
 
 
-def getValuationDate(lines):
+def getPortfolioInfo(lines):
 	"""
 	lines: [list] a list of lines in the first section, that contains
 		fund name, valuation date etc.
 
-	output: a string in "yyyy-mm-dd" representing the date
+	output: 3 values for the portfolio,
+		valuationDate: a string in "yyyy-mm-dd" for the valuation date
+		portfolio: a string for the portfolio id
+		custodian: a string for the portfolio's custodian bank
 	"""
 	def getDateFromLine(line):
 		i = 0
@@ -163,9 +167,40 @@ def getValuationDate(lines):
 
 		raise ValuationDateNotFound()
 
+	def getPortfolioId(text):
+		"""
+		text: a string containing the portfolio's name
+		"""
+		if 'CHINA LIFE MACAU BRANCH BALANCED ' in text:
+			return '30004'
+		elif 'CHINA LIFE MACAU BRANCH GUARANTEE ' in text:
+			return '30003'
+		elif 'CHINA LIFE MACAU BRANCH GROWTH ' in text:
+			return '30005'
+		elif 'Diversified Income Fund' in text:
+			return '19437'
+		else:
+			raise ValueError('getPortfolioId(): unsupported portfolio name {0}'.format(text))
+
 	for line in lines:
 		if line[0].startswith('Valuation Period'):
-			return getDateFromLine(line)
+			valuationDate = getDateFromLine(line)
+		elif line[0].startswith('Fund Name'):
+			portfolio = getPortfolioId(line[0])
+
+	custodianMap = {
+		'30003':'ICBCMACAU',
+		'30004':'ICBCMACAU',
+		'30005':'ICBCMACAU',
+		'19437':'BOCHK'
+	}
+
+	try:
+		return valuationDate, portfolio, custodianMap[portfolio]
+	except:
+		logger.exception('getPortfolioInfo()')
+		raise
+
 
 
 def worksheetToLines(ws):
@@ -245,7 +280,7 @@ def sectionToRecords(lines):
 	output: [iterable] a list of records (dictionary object) in the
 		section.
 	"""
-	sectionType = getSectionType(lines[0])
+	sectionType, sectionCurrency = getSectionInfo(lines[0])
 	headerLines, holdingLines, trailLines = divideSection(lines)
 	records = linesToRecords(sectionHeader(headerLines), holdingLines)
 	exchangeRate = getExchangeRate(trailLines)
@@ -260,6 +295,8 @@ def sectionToRecords(lines):
 
 	def addSecurityInfo(record):
 		record['type'] = sectionType
+		if sectionCurrency and not 'currency' in record:
+			record['currency'] = sectionCurrency
 		if sectionType in ('bond', 'equity'):
 			securityId = extractId(record['description'])
 			idType = 'isin' if sectionType == 'bond' else 'ticker'
@@ -291,30 +328,44 @@ def sectionToRecords(lines):
 
 
 
-def getSectionType(line):
+def getSectionInfo(line):
 	"""
 	line: the first line of a section
 
-	output: a string representing the type of the section, i.e., cash,
-		bond, equity, futures
+	output: two strings, one for the type of the section and the other
+		for the currency of the section.
+
+		type of the section: cash, bond, equity, futures, etc.
+		currency of the section: currency of the section, if not found
+			then return an empty string.
 	"""
-	if re.search('\sCash\s', line[0]):
-		return 'cash'
-	elif re.search('\sBroker Account\s', line[0]):
-		return 'broker account cash'
-	elif re.search('\sDebt Securities\s', line[0]):
-		return 'bond'
-	elif re.search('\sEquities\s', line[0]):
-		return 'equity'
-	elif re.search('\sFutures\s', line[0]):
-		return 'futures'
-	elif re.search('\sForwards\s', line[0]):
-		return 'forwards'
-	elif re.search('\sFixed Deposit\s', line[0]):
-		return 'fixed deposit cash'
-	else:
-		logger.error('getSectionType(): invalid type {0}'.format(line[0]))
-		raise ValueError()
+	def getSectionType(line):
+		if re.search('\sCash\s', line[0]):
+			return 'cash'
+		elif re.search('\sBroker Account\s', line[0]):
+			return 'broker account cash'
+		elif re.search('\sDebt Securities\s', line[0]):
+			return 'bond'
+		elif re.search('\sEquities\s', line[0]):
+			return 'equity'
+		elif re.search('\sFutures\s', line[0]):
+			return 'futures'
+		elif re.search('\sForwards\s', line[0]):
+			return 'forwards'
+		elif re.search('\sFixed Deposit\s', line[0]):
+			return 'fixed deposit cash'
+		else:
+			raise ValueError('getSectionType(): invalid type {0}'.format(line[0]))
+
+	def getSectionCurrency(line):
+		m = re.search('[IVX]+[A-Za-z\s\.]+- ([A-Za-z$]{3})', line[0])
+		if m:
+			return m.group(1).upper().replace('$', 'D')	# HK$ mapped to HKD
+		else:
+			logger.warning('getSectionCurrency(): cannot get currency from {0}'.format(line[0]))
+			return ''
+
+	return getSectionType(line), getSectionCurrency(line)
 
 
 
@@ -427,7 +478,6 @@ def sectionHeader(lines):
 
 		# Bond fields
 		('票面值', 'Par Amt'):'quantity',
-		('幣值', 'CCY'):'currency',
 		('上市 (是/否)', 'Listed (Y/N)'):'is_listed',
 		('Primary', 'Exchange'):'listed_location',
 		('(AVG) FX', 'for TXN'):'fx_on_trade_day',
@@ -455,6 +505,7 @@ def sectionHeader(lines):
 
 		# Equity fields
 		('股數', 'Share'):'quantity',
+		('幣值', 'CCY'):'currency',
 		('Location', 'of Listed'):'listed_location',
 		('最後交易日', 'Latest V.D.'):'last_trade_date',
 		('Avg.', 'Price'):'average_cost',
@@ -495,12 +546,12 @@ def sectionHeader(lines):
 
 
 
-def recordsToRows(records):
+def recordsToRows(records, headers=None):
 	"""
 	records: a list of position records with the same set of headers, 
 		such as HTM bonds, or AFS bonds, equitys, cash entries.
 
-	headers: the headers of the records
+	headers: the headers of the records, if provided.
 	
 	output: a list of rows ready to be written to csv, with the first
 		row being headers, the rest being values from each record.
@@ -508,8 +559,9 @@ def recordsToRows(records):
 	"""
 	if not records:
 		return []
+	if not headers:
+		headers = list(records[0].keys())
 
-	headers = list(records[0].keys())
 	def toValueList(record):
 		return [record[header] for header in headers]
 
