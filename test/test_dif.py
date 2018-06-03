@@ -126,6 +126,7 @@ class TestDif(unittest2.TestCase):
 		self.assertEqual(record['valuation_date'], '2018-5-28')
 		self.assertEqual(record['description'], '(USY9896RAB79) Zoomlion HK SPV Co Ltd 6.125%')
 		self.assertEqual(record['isin'], 'USY9896RAB79')
+		self.assertEqual(record['currency'], 'USD')
 		self.assertAlmostEqual(record['exchange_rate'], 7.8452, 6)
 		self.assertEqual(record['quantity'], 13700000)
 		self.assertEqual(record['coupon_rate'], 0.06125)
@@ -139,6 +140,7 @@ class TestDif(unittest2.TestCase):
 	def verifyTradingBond(self, record):
 		self.assertEqual(record['portfolio'], '19437')
 		self.assertEqual(record['isin'], 'XS1376566714')
+		self.assertEqual(record['currency'], 'USD')
 		self.assertAlmostEqual(record['exchange_rate'], 7.8452, 6)
 		self.assertEqual(record['quantity'], 5000000)
 		self.assertAlmostEqual(record['coupon_rate'], 0.0555, 6)
