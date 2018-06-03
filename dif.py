@@ -358,7 +358,15 @@ def sectionToRecords(lines):
 
 		for key in ('coupon_start_date', 'maturity_date', 'last_trade_date', 'trade_date'):
 			if key in record:
-				record[key] = dateToString(ordinalToDate(record[key]))
+				"""
+				In most cases, the date from Excel is read in as a float
+				number. However, in rare cases, it can be a string. So we
+				handle them separately.
+				"""
+				if isinstance(record[key], float):
+					record[key] = dateToString(ordinalToDate(record[key]))
+				else:
+					record[key] = convertStringDate(record[key])
 		return record
 
 	return map(toDateString, map(addSecurityInfo, filter(nonEmptyPosition, records)))
@@ -575,7 +583,9 @@ def sectionHeader(lines):
 		# headers to ignore (after header column % of fund)
 		(2004.0, '購入'): '',
 		('Yield', '%'): '',
-		(37986.0, 'Market Price'): ''
+		(37986.0, 'Market Price'): '',
+		('', 'checking'): '',
+		(0.0, 0.0): '',
 	}
 
 	try:
@@ -618,6 +628,20 @@ def ordinalToDate(ordinal):
 
 def dateToString(dt):
 	return str(dt.year) + '-' + str(dt.month) + '-' + str(dt.day)
+
+
+
+def convertStringDate(dtString):
+	"""
+	For trustee Excel files, based on experience, if the date is read in
+	as a string, then it is of 'dd/mm/yyyy' format. We just conver it
+	to a format as 'yyyy-mm-dd'. 
+	"""
+	m = re.match('(\d{1,2})/(\d{1,2})/(\d{4})', dtString)
+	if m:
+		return m.group(3) + '-' + m.group(2) + '-' + m.group(1)
+	else:
+		raise ValueError('convertStringDate(): {0} cannot be converted'.format(dtString))
 
 
 
