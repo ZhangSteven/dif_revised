@@ -33,6 +33,9 @@ class InconsistentRecordSum(Exception):
 class RecordTypeNotSupported(Exception):
 	pass
 
+class UnderlyingTypeNotFound(Exception):
+	pass
+
 
 
 def readFile(file):
@@ -94,23 +97,33 @@ def validate(records, summary):
 	def recordValue(record):
 		if record['type'] in ('cash', 'broker account cash', 'fixed deposit'):
 			return record['book_cost']
+		
 		elif record['type'] == 'bond':
 			if record['accounting'] == 'htm':
 				return record['quantity'] / 100 * record['amortized_cost'] + record['accrued_interest']
 			else:
 				return record['quantity'] / 100 * record['price'] + record['accrued_interest']
+
 		elif record['type'] == 'futures':
 			return record['market_gain_loss']
+
 		elif record['type'] == 'equity':
-			if 'isin' in record and not 'ticker' in record: # bond treated as equity
-				return record['quantity'] * record['price'] / 100
-			else:
-				return record['quantity'] * record['price']
+			# if record['underlying'] == 'bond': # bond treated as equity
+			# 	return record['quantity'] * record['price'] / 100
+			# else:
+			# 	return record['quantity'] * record['price']
+			return record['market_value']
+
 		else:
 			raise RecordTypeNotSupported('{0}'.format(record))
 
 	def sumUp(total, record):
-		return total + record['exchange_rate'] * recordValue(record)
+		try:
+			return total + record['exchange_rate'] * recordValue(record)
+		except:
+			print(record)
+			import sys
+			sys.exit(1)
 
 	for recordType in summary:
 		if recordType == 'cash':
@@ -328,12 +341,14 @@ def sectionToRecords(lines):
 		return record
 
 	def nonEmptyPosition(record):
-		if sectionType in ('bond', 'equity', 'futures') and record['quantity'] in (0, ''):
+		if not 'quantity' in record and not 'book_cost' in record:
 			return False
-		elif record['book_cost'] in (0, ''):
+
+		if 'quantity' in record and record['quantity'] in (0, '') or \
+			'book_cost' and record['book_cost'] in (0, ''):
 			return False
-		else:
-			return True
+		
+		return True 	# either quantity or book_cost is non-trival
 
 	def toDateString(record):
 		if record['type'] == 'futures':
@@ -445,10 +460,13 @@ def getAccountingTreatment(line):
 	output: a string for the sub section's accouting treatment, i..e, htm,
 		afs, trading. Or raise an exception if not found.
 	"""
-	if line[0].startswith('(i) Trading'):
+	text = line[0].lower()
+	if 'trading' in text:
 		return 'trading'
-	elif line[0].startswith('(i) Held to Maturity'):
+	elif 'held to maturity' in text or 'amortized cost' in text:
 		return 'htm'
+	elif 'available for sales' in text or 'market value' in text:
+		return 'afs'
 	else:
 		raise InvalidAccoutingInfo()
 
