@@ -1,8 +1,6 @@
 # coding=utf-8
 # 
-# Read holdings from China Life trustee's DIF excel file. It is actually
-# a rewritten of the old DIF package, with a more clear structure. Structure
-# and code are similar to clamc_trustee package.
+# Read holdings from China Life trustee's Excel file.
 # 
 # known bug: futures' position's maturity date is of different format and
 # 	not converted. search for 'FIXME'

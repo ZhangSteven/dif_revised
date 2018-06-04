@@ -24,7 +24,8 @@ def open_dif(inputFile, portValues, outputDir, prefix):
 	<prefix>_yyyy-mm-dd_afs_positions.csv
 	<prefix>_yyyy-mm-dd_htm_positions.csv
 
-	return 3 string, for the full file path to the 3 output csv files.
+	output: return 3 string, for the full file path to the 3 output csv files.
+	side effect: populate the portValues dictionary with 
 
 	The interface is exactly the same as the old DIF package's
 	open_dif.open_dif() function, to replace it.
@@ -47,7 +48,7 @@ def open_dif(inputFile, portValues, outputDir, prefix):
 
 	portValues['valuation_date'] = valuationDate
 	portValues['portfolio'] = portfolioId
-	for (k, v) in valuationSummary.items():
+	for (k, v) in valuationSummary.items():	# NAV, unit price, num of units
 		portValues[k] = v
 
 	return [cashCsvFile, afsCsvFile, htmCsvFile]
