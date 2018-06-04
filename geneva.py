@@ -1,6 +1,6 @@
 # coding=utf-8
 # 
-# Use holding records from dif.py, then generate csv files for Geneva
+# Use holding records from dif.py, to generate csv files for Geneva
 # reconciliation purpose. 
 # 
 
@@ -9,7 +9,52 @@ from functools import reduce
 
 
 
-def writeCashCsv(file, records):
+def open_dif(inputFile, portValues, outputDir, prefix):
+	"""
+	Read an input file, write 3 output csv files, namely,
+
+		1. HTM positions
+		2. AFS positions
+		3. cash
+
+	the output file should be written to outputDir, and output file
+	names should follow the below convention:
+
+	<prefix>_yyyy-mm-dd_cash.csv
+	<prefix>_yyyy-mm-dd_afs_positions.csv
+	<prefix>_yyyy-mm-dd_htm_positions.csv
+
+	return 3 string, for the full file path to the 3 output csv files.
+
+	The interface is exactly the same as the old DIF package's
+	open_dif.open_dif() function, to replace it.
+	"""
+	from os.path import join
+	records, valuationSummary = readFile(inputFile)
+	portfolioId = records[0]['portfolio']
+	if portfolioId == '19437':
+		prefix = 'DIF_'
+
+
+	valuationDate = records[0]['valuation_date']
+	cashCsvFile = join(outputDir, prefix + valuationDate + '_cash.csv')
+	afsCsvFile = join(outputDir, prefix + valuationDate + '_afs_positions.csv')
+	htmCsvFile = join(outputDir, prefix + valuationDate + '_htm_positions.csv')
+
+	writeCashCsv(cashCsvFile, records)
+	writeAfsCsv(afsCsvFile, records)
+	writeHtmCsv(htmCsvFile, records)
+
+	portValues['valuation_date'] = valuationDate
+	portValues['portfolio'] = portfolioId
+	for (k, v) in valuationSummary.items():
+		portValues[k] = v
+
+	return [cashCsvFile, afsCsvFile, htmCsvFile]
+
+
+
+def writeCashCsv(file, records, delimiter='|'):
 	"""
 	records: the holding records of the portfolio, including cash, bond,
 		equity, futures, etc.
@@ -86,11 +131,12 @@ def writeCashCsv(file, records):
 
 	writeCsv(file,
 		recordsToRows(reduce(consolidateCash, map(toCashRecords, filter(cash, records)), []), 
-						cashHeaders))
+						cashHeaders),
+		delimiter)
 
 
 
-def writeAfsCsv(file, records):
+def writeAfsCsv(file, records, delimiter='|'):
 	"""
 	records: the holding records of the portfolio, including cash, bond,
 		equity, futures, etc.
@@ -142,11 +188,12 @@ def writeAfsCsv(file, records):
 		return r
 	# end of toAfsRecords()
 	writeCsv(file,
-		recordsToRows(list(map(toAfsRecords, filter(afsPosition, records))), afsHeaders))
+		recordsToRows(list(map(toAfsRecords, filter(afsPosition, records))), afsHeaders),
+		delimiter)
 
 
 
-def writeHtmCsv(file, records):
+def writeHtmCsv(file, records, delimiter='|'):
 	"""
 	records: the holding records of the portfolio, including cash, bond,
 		equity, futures, etc.
@@ -195,7 +242,8 @@ def writeHtmCsv(file, records):
 		return r
 	# end of toHtmRecords()
 	writeCsv(file, 
-		recordsToRows(list(map(toHtmRecords, filter(htmPosition, records))), htmHeaders))
+		recordsToRows(list(map(toHtmRecords, filter(htmPosition, records))), htmHeaders),
+		delimiter)
 
 
 
@@ -220,7 +268,15 @@ if __name__ == '__main__':
 						'CLM GNT 2017-10-25.xls')
 		return readFile(file)
 
-	records, valuationSummary = getRecordsBal()
-	writeHtmCsv('htm holding.csv', records)
-	writeAfsCsv('afs holding.csv', records)
-	writeCashCsv('cash.csv', records)
+	# records, valuationSummary = getRecords()
+	# writeHtmCsv('htm holding.csv', records, '|')
+	# writeAfsCsv('afs holding.csv', records, '|')
+	# writeCashCsv('cash.csv', records, '|')
+
+	path = join('C:\\temp\\Reconciliation\\')
+	portValues = {}
+	output = open_dif(join(path, 'DIF', 'CL Franklin DIF 2018-05-28(2nd Revised).xls'),
+						portValues,
+						join(path, 'result'), 'dif')
+	print(output)
+	print(portValues)

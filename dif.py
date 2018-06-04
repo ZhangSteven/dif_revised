@@ -43,10 +43,15 @@ class UnderlyingTypeNotFound(Exception):
 
 def readFile(file):
 	"""
-	ws: the full path to the China Life trustee's DIF file.
+	ws: the full path to the China Life trustee's Excel file, for DIF,
+		balanced fund and guarantee fund.
 
-	output: the list records from the portfolio holdings, i.e., cash,
-		equity, bond, futures etc. 
+	output: two items:
+		[list] a list of holdings of the portfolios, i.e., cash, equity,
+		bond, futures, forwards, fixed deposit, etc.
+
+		[dictionary] the portfolio's valuation, i.e., number of units,
+		total NAV, and unit price.
 	"""
 	wb = open_workbook(filename=file)
 	records = readHolding(wb.sheet_by_name('Portfolio Val.'))
@@ -712,9 +717,9 @@ def convertStringDate(dtString):
 
 
 
-def writeCsv(fileName, rows):
+def writeCsv(fileName, rows, delimiter=','):
 	with open(fileName, 'w', newline='') as csvfile:
-		file_writer = csv.writer(csvfile)
+		file_writer = csv.writer(csvfile, delimiter=delimiter)
 		for row in rows:
 			file_writer.writerow(row)
 
@@ -805,7 +810,8 @@ if __name__ == '__main__':
 	def allRecords():
 		file = join(get_current_path(), 'samples', 
 						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
-		return readHolding(file)
+		wb = open_workbook(file)
+		return readHolding(wb.sheet_by_name('Portfolio Val.'))
 
 	def tradingBond(record):
 		if record['type'] == 'bond' and record['accounting'] == 'trading':

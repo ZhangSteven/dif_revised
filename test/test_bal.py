@@ -5,7 +5,7 @@ import unittest2
 from os.path import join
 from xlrd import open_workbook
 from dif_revised.utility import get_current_path
-from dif_revised.dif import readHolding, readSummary, validate
+from dif_revised.dif import readHolding, readSummary, validate, readFile
 
 
 
@@ -125,3 +125,16 @@ class TestBal(unittest2.TestCase):
 			validate(TestBal.gntrecords, TestBal.gntsummary, TestBal.gntvsum)
 		except:
 			self.fail('validate() failed')
+
+
+
+	def testValidateBal2(self):
+		file = join(get_current_path(), 'samples',
+					'CLM BAL 2018-05-31.xls')
+		records, vSummary = readFile(file)
+		equityRecords = list(filter(equity, records))
+		self.assertEqual(len(equityRecords), 26)
+
+		record = equityRecords[17]
+		self.assertEqual(record['ticker'], '6886 HK')
+		self.assertEqual(record['quantity'], 60000)
