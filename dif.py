@@ -30,6 +30,9 @@ class ExchangeRateNotFound(Exception):
 class InconsistentRecordSum(Exception):
 	pass
 
+class InconsistentNav(Exception):
+	pass
+
 class RecordTypeNotSupported(Exception):
 	pass
 
@@ -42,13 +45,14 @@ def readFile(file):
 	"""
 	ws: the full path to the China Life trustee's DIF file.
 
-	output: 
+	output: the list records from the portfolio holdings, i.e., cash,
+		equity, bond, futures etc. 
 	"""
 	wb = open_workbook(filename=file)
 	records = readHolding(wb.sheet_by_name('Portfolio Val.'))
-	summary = readSummary(wb.sheet_by_name('Portfolio Sum.'))
-	validate(records, summary)
-	return records
+	summary, valuationSummary = readSummary(wb.sheet_by_name('Portfolio Sum.'))
+	validate(records, summary, valuationSummary)
+	return records, valuationSummary
 
 
 
@@ -59,13 +63,19 @@ def readSummary(ws):
 	output: [dictionary] a summary containing the portfolio's total values,
 		such as cash, bond, equity, futures, fixed deposit
 	"""
-	lines = worksheetToLines(ws)
-	for i in range(0, len(lines)):	# find where summary starts
-		if lines[i][0] == 'Current Portfolio':
-			break
+	def readNthFloat(line, n):
+		"""
+		read the line, column by column, find the nth float number 
+		and return it.
+		"""
+		i = 0
+		for item in line:
+			if isinstance(item, float):
+				i = i + 1
+			if i == n:
+				return item
 
-	summary = {}
-	typeMap = {
+	nameMap = {
 		'Cash (現金)': 'cash',
 		'Debt Securities (債務票據)': 'bond',
 		'Debt Amortization (債務攤銷)': 'bond amortization',
@@ -74,28 +84,62 @@ def readSummary(ws):
 		'Futures (期貨合約)': 'futures'
 	}
 
-	def readValue(line):
-		i = 0
-		for item in line:
-			if isinstance(item, float):
-				i = i + 1
-			if i == 2:
-				return item
+	lines = worksheetToLines(ws)
+	for i in range(0, len(lines)):	# find where summary starts
+		if lines[i][0] == 'Current Portfolio':
+			break
 
-	for line in lines[i+1:i+14]:
-		try:
-			summary[typeMap[line[0]]] = readValue(line)
-		except KeyError:
-			pass
-
+	summary = {}
+	for line in lines[i+1:]:
+		if line[0] == '':
+			break
+		if line[0] in nameMap:
+			summary[nameMap[line[0]]] = readNthFloat(line, 2)
+		else:
+			summary[line[0]] = readNthFloat(line, 2)
+			
 	summary['bond'] = summary['bond'] + summary.pop('bond amortization')
-	return summary
+
+	valuationSummary = {}
+	for line in lines[i+10:]:
+		if isinstance(line[0], float):
+			continue
+
+		if line[0].startswith('Total Units Held at this Valuation'):
+			valuationSummary['number_of_units'] = readNthFloat(line, 1)
+		elif line[0].startswith('Unit Price'):
+			valuationSummary['unit_price'] = readNthFloat(line, 1)
+		elif line[0].startswith('Net Asset Value'):
+			valuationSummary['nav'] = readNthFloat(line, 1)
+
+	# for Balanced and Guarantee fund, there is no net asset value
+	# in the Excel sheet, we then sum up all the items in the summary
+	# to derive the NAV.
+	if not 'nav' in valuationSummary:
+		totalNav = 0
+		for value in summary.values():
+			totalNav = totalNav + value 
+		valuationSummary['nav'] = totalNav
+
+	return summary, valuationSummary
 
 
 
-def validate(records, summary):
+def validate(records, summary, valuationSummary):
+	"""
+	When we add up positions in a category, say cash or equity, we want to
+	compare the total to the summary, see whether they match. If they don't
+	match, an exception is raised.
+
+	records: all holding records
+	summary: summary of the record totals
+	valuationSummary: the portfolio's NAV, number of units and unit price.
+	"""
+	# what category of records we want to check
+	typesChecked = ['cash', 'equity', 'bond', 'futures']
+
 	def recordValue(record):
-		if record['type'] in ('cash', 'broker account cash', 'fixed deposit'):
+		if record['type'] in ('cash', 'broker account cash'):
 			return record['book_cost']
 		
 		elif record['type'] == 'bond':
@@ -121,11 +165,14 @@ def validate(records, summary):
 		try:
 			return total + record['exchange_rate'] * recordValue(record)
 		except:
-			print(record)
-			import sys
-			sys.exit(1)
+			logger.exception('sumUp() {0}'.format(record))
+			raise
 
-	for recordType in summary:
+	for recordType in typesChecked:
+		if not recordType in summary:
+			logger.warning('validate(): type \'{0}\' not in summary'.format(recordType))
+			continue
+
 		if recordType == 'cash':
 			tempRecords = filter(lambda r: r['type'] in ('cash', 'broker account cash'), records)
 		else:
@@ -134,6 +181,13 @@ def validate(records, summary):
 		diff = summary[recordType] - reduce(sumUp, tempRecords, 0)
 		if abs(diff) > 0.2:
 			raise InconsistentRecordSum('validate(): diff {0} for {1}'.format(diff, recordType))
+
+	diff = valuationSummary['nav']/valuationSummary['number_of_units'] - valuationSummary['unit_price']
+	if abs(diff) > 5e-5:	# after rounded to 4 dicimal places, should be the same
+		raise InconsistentNav('validate(): nav={0}, units={1}, unit price={2}'.\
+								format(valuationSummary['nav'], 
+										valuationSummary['number_of_units'],
+										valuationSummary['unit_price']))
 
 
 
@@ -397,7 +451,7 @@ def getSectionInfo(line):
 	XIII. Futures (期貨合約)
 
 	output: two strings, one for the type of the section and the other
-		for the currency of the section:
+		for the currency of the section (if available):
 
 		type of the section: cash, bond, equity, futures, etc.
 		currency of the section: currency of the section, if not found

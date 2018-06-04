@@ -215,7 +215,12 @@ if __name__ == '__main__':
 						'CLM BAL 2017-07-27.xls')
 		return readFile(file)
 
-	difRecords = getRecordsBal()
-	writeHtmCsv('dif htm.csv', difRecords)
-	writeAfsCsv('dif afs.csv', difRecords)
-	writeCashCsv('cash.csv', difRecords)
+	def getRecordsGnt():
+		file = join(get_current_path(), 'samples', 
+						'CLM GNT 2017-10-25.xls')
+		return readFile(file)
+
+	records, valuationSummary = getRecordsBal()
+	writeHtmCsv('htm holding.csv', records)
+	writeAfsCsv('afs holding.csv', records)
+	writeCashCsv('cash.csv', records)
