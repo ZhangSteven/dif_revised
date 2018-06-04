@@ -8,6 +8,30 @@ from dif_revised.dif import readFile, recordsToRows, writeCsv
 
 
 
+def writeCashCsv(file, records):
+	"""
+	records: the holding records of the portfolio, including cash, bond,
+		equity, futures, etc.
+
+	file: the output csv file
+
+	output: no return value, the function writes cash records to
+		the output csv file with headers needed by Geneva reconciliation.
+		The cash records include bank cash and futures broker account cash.
+	"""
+	cashHeaders = ['portfolio', 'custodian', 'date', 'account_type',
+					'account_num', 'currency', 'balance', 'fx_rate',
+					'local_currency_equivalent']
+
+	def cash(record):
+		if record['type'] in ('cash', 'broker account cash'):
+			return True
+		return False
+
+	def toCashRecords(record):
+		
+
+
 def writeAfsCsv(file, records):
 	"""
 	records: the holding records of the portfolio, including cash, bond,
@@ -15,7 +39,7 @@ def writeAfsCsv(file, records):
 
 	file: the output csv file
 
-	output: no return value, the function writes the HTM bond records to
+	output: no return value, the function writes all non HTM records to
 		the output csv file with headers needed by Geneva reconciliation.
 	"""
 	afsHeaders = ['portfolio', 'date', 'custodian', 'ticker', 'isin',
@@ -25,7 +49,7 @@ def writeAfsCsv(file, records):
 
 	def afsPosition(record):
 		if record['type'] == 'equity' or \
-			(record['type'] == 'bond' and record['accounting'] == 'trading'):
+			(record['type'] == 'bond' and record['accounting'] != 'htm'):
 			return True
 		return False
 

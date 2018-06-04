@@ -153,7 +153,8 @@ def readHolding(ws):
 	def addPortfolioInfo(record):
 		record['valuation_date'] = valuationDate
 		record['portfolio'] = portfolio
-		record['custodian'] = custodian
+		if record['type'] in ('equity', 'bond'):
+			record['custodian'] = custodian
 		return record
 
 	return list(map(addPortfolioInfo, records))
@@ -306,6 +307,11 @@ def sectionToRecords(lines):
 			logger.error('extractId(): find id failed.')
 			raise ValueError('text=\'{0}\''.format(text))
 
+	def extractCashAccountInfo(text):
+		# print(text)
+		tokens = text.split('-')
+		return tokens[0].strip(), '' if len(tokens) == 1 else tokens[1].strip()
+
 	def convertTicker(text):
 		"""
 		in DIF, the following is used to identify an equity (H0939), we
@@ -323,10 +329,11 @@ def sectionToRecords(lines):
 			logger.warning('convertTicker(): {0} is not converted'.format(text))
 			return text
 
-	def addSecurityInfo(record):
+	def addPositionInfo(record):
 		record['type'] = sectionType
 		if sectionCurrency and not 'currency' in record:
 			record['currency'] = sectionCurrency
+
 		if sectionType in ('bond', 'equity'):
 			securityId = extractId(record['description'])
 			if sectionType == 'bond' or (sectionType == 'equity' and len(securityId) == 12):
@@ -336,6 +343,12 @@ def sectionToRecords(lines):
 				securityId = convertTicker(securityId)
 
 			record[idType] = securityId
+		
+		if sectionType in ('cash', 'broker account cash'):
+			bank, accountType = extractCashAccountInfo(record['description'])
+			record['bank'] = bank
+			record['account_type'] = accountType
+
 		if exchangeRate:
 			record['exchange_rate'] = exchangeRate
 		return record
@@ -369,7 +382,7 @@ def sectionToRecords(lines):
 					record[key] = convertStringDate(record[key])
 		return record
 
-	return map(toDateString, map(addSecurityInfo, filter(nonEmptyPosition, records)))
+	return map(toDateString, map(addPositionInfo, filter(nonEmptyPosition, records)))
 
 
 
@@ -577,22 +590,21 @@ def sectionHeader(lines):
 		# Fixed Deposit fields
 		('FX', 'at V.D.'): 'fx_on_trade_day',
 		('交易日', 'V.D.'): 'trade_date',
-		('Int.', 'Rate(%)'): 'interest_rate',
-
-
-		# headers to ignore (after header column % of fund)
-		(2004.0, '購入'): '',
-		('Yield', '%'): '',
-		(37986.0, 'Market Price'): '',
-		('', 'checking'): '',
-		(0.0, 0.0): '',
+		('Int.', 'Rate(%)'): 'interest_rate'
 	}
 
-	try:
-		return [headerMap[item] for item in zip(*lines)]
-	except KeyError:
-		logger.exception('sectionHeader(): header not found')
-		raise
+	headers = []
+	for item in zip(*lines):
+		try:
+			headers.append(headerMap[item])
+		except KeyError:
+			logger.exception('sectionHeader(): {0} not matched'.format(item))
+			raise
+
+		if 'percentage_of_fund' in headers:	# ignore headers after this column
+			break
+
+	return headers
 
 
 

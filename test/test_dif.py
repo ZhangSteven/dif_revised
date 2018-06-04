@@ -134,6 +134,7 @@ class TestDif(unittest2.TestCase):
 		self.assertEqual(record['maturity_date'], '2022-12-20')
 		self.assertAlmostEqual(record['average_cost'], 96.4166058)
 		self.assertAlmostEqual(record['amortized_cost'], 97.2761909)
+		self.assertEqual(record['custodian'], 'BOCHK')
 
 
 
@@ -165,6 +166,7 @@ class TestDif(unittest2.TestCase):
 		self.assertAlmostEqual(record['average_cost'], 104.332436, 6)
 		self.assertAlmostEqual(record['price'], 99.268, 6)
 		self.assertAlmostEqual(record['percentage_of_fund'], 0.71, 6)
+		self.assertEqual(record['custodian'], 'BOCHK')
 
 
 
@@ -174,9 +176,12 @@ class TestDif(unittest2.TestCase):
 		"""
 		self.assertEqual(record['description'], 'Morgan Stanley - Broker Account')
 		self.assertEqual(record['currency'], 'USD')
+		self.assertEqual(record['bank'], 'Morgan Stanley')
+		self.assertEqual(record['account_type'], 'Broker Account')
 		self.assertEqual(record['account_number'], '045621UE7')
 		self.assertAlmostEqual(record['book_cost'], 3938502.58, 6)
 		self.assertAlmostEqual(record['exchange_rate'], 7.8452, 6)
+		self.assertFalse('custodian' in record)
 
 
 

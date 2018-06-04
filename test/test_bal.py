@@ -14,6 +14,16 @@ def equity(record):
 		return True
 	return False
 
+def bondAfs(record):
+	if record['type'] == 'bond' and record['accounting'] == 'afs':
+		return True
+	return False
+
+def cash(record):
+	if record['type'] in ('cash', 'broker account cash'):
+		return True
+	return False
+
 
 
 class TestBal(unittest2.TestCase):
@@ -61,12 +71,53 @@ class TestBal(unittest2.TestCase):
 
 
 
+	def testCashBal(self):
+		records = list(filter(cash, TestBal.balrecords))
+		self.assertEqual(len(records), 7)
+		record = records[0]
+		self.assertEqual(record['bank'], 'Citibank')
+		self.assertEqual(record['account_type'], 'Saving Account')
+		self.assertEqual(record['currency'], 'HKD')
+		self.assertAlmostEqual(record['book_cost'], 7278.97)
+		self.assertAlmostEqual(record['exchange_rate'], 1.030046455)
+		self.assertFalse('custodian' in record)
+		self.assertEqual(record['portfolio'], '30004')
+
+
 	def testValidateBal(self):
 		try:
 			validate(TestBal.balrecords, TestBal.balsummary)
 		except:
 			self.fail('validate() failed')
 
+
+
+	def testBondAfsGnt(self):
+		records = list(filter(bondAfs, TestBal.gntrecords))
+		self.assertEqual(len(records), 11)
+		record = records[0]
+		self.assertEqual(record['portfolio'], '30003')
+		self.assertEqual(record['valuation_date'], '2017-10-25')
+		self.assertEqual(record['isin'], 'XS1389124774')
+		self.assertEqual(record['quantity'], 22000000)
+		self.assertAlmostEqual(record['coupon_rate'], 0.0605)
+		self.assertEqual(record['maturity_date'], '2056-2-15')
+		self.assertAlmostEqual(record['price'], 108.069)
+		self.assertAlmostEqual(record['accrued_interest'], 928002.78)
+
+
+
+	def testCashGnt(self):
+		records = list(filter(cash, TestBal.gntrecords))
+		self.assertEqual(len(records), 8)
+		record = records[7]
+		self.assertEqual(record['bank'], 'Luso International Banking Ltd.')
+		self.assertEqual(record['account_type'], '')
+		self.assertEqual(record['currency'], 'USD')
+		self.assertAlmostEqual(record['book_cost'], 36.67)
+		self.assertAlmostEqual(record['exchange_rate'], 8.0366209)
+		self.assertFalse('custodian' in record)
+		self.assertEqual(record['portfolio'], '30003')
 
 
 	def testValidateGnt(self):
