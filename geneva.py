@@ -5,6 +5,7 @@
 # 
 
 from dif_revised.dif import readFile, recordsToRows, writeCsv
+from functools import reduce
 
 
 
@@ -23,13 +24,70 @@ def writeCashCsv(file, records):
 					'account_num', 'currency', 'balance', 'fx_rate',
 					'local_currency_equivalent']
 
+	bankMap = {	# map bank name to custodian name
+		'Citibank': 'CITI',
+		'ICBC (Macau) Ltd': 'ICBCMACAU',
+		'JPMorgan Chase Bank, N.A.': 'JPM',
+		'Bank of China Ltd. (Macau Branch)': 'BOCMACAU',
+		'Luso International Banking Ltd.': 'LUSO',
+		'China Guangfa Bank Co., Ltd Macau Branch': 'GUANGFA_MACAU',
+		'Bank of China (HK)': 'BOCHK'
+	}
+
 	def cash(record):
 		if record['type'] in ('cash', 'broker account cash'):
 			return True
 		return False
 
 	def toCashRecords(record):
-		
+		r = {}
+		r['date'] = record['valuation_date']
+		if record['type'] == 'cash':
+			try:
+				r['custodian'] = bankMap[record['bank']]
+			except KeyError:
+				raise KeyError('toCashRecords(): {0} map custodian failed'.format(record))
+		elif record['type'] == 'broker account cash':
+			r['custodian'] = record['bank']
+
+		r['account_num'] = record['account_number']
+		r['balance'] = record['book_cost']
+		r['fx_rate'] = record['exchange_rate']
+		r['local_currency_equivalent'] = record['exchange_rate'] * record['book_cost']
+
+		for header in ['portfolio', 'account_type', 'currency']:
+			r[header] = record[header]
+
+		return r
+
+	def consolidateCash(cashList, cash):
+		"""
+		Merge cash entries of the same bank, of the same currency to one
+		entry.
+		"""
+		def findMatchingCash(cashList, cash):
+			for i in range(len(cashList)):
+				c = cashList[i]
+				if c['custodian'] == cash['custodian'] and c['currency'] == cash['currency']:
+					return i
+
+			return -1
+
+		def mergeCashToList(cashList, index, cash):
+			if index == -1:
+				cashList.append(cash)
+			else:
+				cashList[index]['balance'] = cashList[index]['balance'] + cash['balance']
+				cashList[index]['local_currency_equivalent'] = cashList[index]['local_currency_equivalent'] + cash['local_currency_equivalent']
+			return cashList
+
+		i = findMatchingCash(cashList, cash)
+		return mergeCashToList(cashList, i, cash)
+
+	writeCsv(file,
+		recordsToRows(reduce(consolidateCash, map(toCashRecords, filter(cash, records)), []), 
+						cashHeaders))
+
 
 
 def writeAfsCsv(file, records):
@@ -152,6 +210,12 @@ if __name__ == '__main__':
 						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
 		return readFile(file)
 
-	difRecords = getRecords()
+	def getRecordsBal():
+		file = join(get_current_path(), 'samples', 
+						'CLM BAL 2017-07-27.xls')
+		return readFile(file)
+
+	difRecords = getRecordsBal()
 	writeHtmCsv('dif htm.csv', difRecords)
 	writeAfsCsv('dif afs.csv', difRecords)
+	writeCashCsv('cash.csv', difRecords)

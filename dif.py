@@ -388,42 +388,43 @@ def sectionToRecords(lines):
 
 def getSectionInfo(line):
 	"""
-	line: the first line of a section
+	line: the first line of a section, it contains description of a
+		section, its first column (line[0]) looks like:
+
+	I. Cash - HKD (現金-港幣)
+	V. Debt Securities (Held-to-Maturity) - US$  (持到期債務票據- 美元)
+	VII. Equities -HKD  (股票-港幣)
+	XIII. Futures (期貨合約)
 
 	output: two strings, one for the type of the section and the other
-		for the currency of the section.
+		for the currency of the section:
 
 		type of the section: cash, bond, equity, futures, etc.
 		currency of the section: currency of the section, if not found
 			then return an empty string.
 	"""
-	def getSectionType(line):
-		if re.search('\sCash\s', line[0]):
-			return 'cash'
-		elif re.search('\sBroker Account\s', line[0]):
-			return 'broker account cash'
-		elif re.search('\sDebt Securities\s', line[0]):
+	def getSectionType(text):
+		if text == 'Debt Securities':
 			return 'bond'
-		elif re.search('\sEquities\s', line[0]):
+		elif text == 'Equities':
 			return 'equity'
-		elif re.search('\sFutures\s', line[0]):
-			return 'futures'
-		elif re.search('\sForwards\s', line[0]):
-			return 'forwards'
-		elif re.search('\sFixed Deposit\s', line[0]):
-			return 'fixed deposit cash'
+		elif text == 'Broker Account':
+			return 'broker account cash'
 		else:
-			raise ValueError('getSectionType(): invalid type {0}'.format(line[0]))
+			return text.lower()
 
-	def getSectionCurrency(line):
-		m = re.search('[IVX]+[A-Za-z\s\.]+- ([A-Za-z$]{3})', line[0])
+	def getSectionCurrency(text):
+		m = re.search('\s-\s*([A-Za-z$]{3})', text)
 		if m:
-			return m.group(1).upper().replace('$', 'D')	# HK$ mapped to HKD
+			return m.group(1).upper().replace('$', 'D')
 		else:
-			logger.warning('getSectionCurrency(): cannot get currency from {0}'.format(line[0]))
 			return ''
 
-	return getSectionType(line), getSectionCurrency(line)
+	m = re.match('[IVX]+\.*\s+([A-Za-z\s]+)', line[0])
+	if not m:
+		raise ValueError('getSectionInfo(): failed to extract {0}'.format(line[0]))
+
+	return getSectionType(m.group(1).strip()), getSectionCurrency(line[0])
 
 
 
