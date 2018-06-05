@@ -31,13 +31,13 @@ def open_dif(inputFile, portValues, outputDir, prefix):
 	open_dif.open_dif() function, to replace it.
 	"""
 	from os.path import join
-	records, valuationSummary = readFile(inputFile)
+	records, summary = readFile(inputFile)
 	portfolioId = records[0]['portfolio']
+	valuationDate = records[0]['valuation_date']
+
 	if portfolioId == '19437':
 		prefix = 'DIF_'
 
-
-	valuationDate = records[0]['valuation_date']
 	cashCsvFile = join(outputDir, prefix + valuationDate + '_cash.csv')
 	afsCsvFile = join(outputDir, prefix + valuationDate + '_afs_positions.csv')
 	htmCsvFile = join(outputDir, prefix + valuationDate + '_htm_positions.csv')
@@ -48,8 +48,8 @@ def open_dif(inputFile, portValues, outputDir, prefix):
 
 	portValues['valuation_date'] = valuationDate
 	portValues['portfolio'] = portfolioId
-	for (k, v) in valuationSummary.items():	# NAV, unit price, num of units
-		portValues[k] = v
+	for key in ['nav', 'number_of_units', 'unit_price']:
+		portValues[key] = summary[key]
 
 	return [cashCsvFile, afsCsvFile, htmCsvFile]
 

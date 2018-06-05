@@ -1,9 +1,8 @@
 # coding=utf-8
 # 
-# Read holdings from China Life trustee's Excel file.
+# Read holdings from China Life trustee's Excel file for DIF, Balanced
+# fund, Guarantee fund and Growth fund.
 # 
-# known bug: futures' position's maturity date is of different format and
-# 	not converted. search for 'FIXME'
 
 from xlrd import open_workbook
 from functools import reduce
@@ -48,14 +47,14 @@ def readFile(file):
 		[list] a list of holdings of the portfolios, i.e., cash, equity,
 		bond, futures, forwards, fixed deposit, etc.
 
-		[dictionary] the portfolio's valuation, i.e., number of units,
-		total NAV, and unit price.
+		[dictionary] the portfolio's summary, from the readSummary()
+			function.
 	"""
 	wb = open_workbook(filename=file)
 	records = readHolding(wb.sheet_by_name('Portfolio Val.'))
-	summary, valuationSummary = readSummary(wb.sheet_by_name('Portfolio Sum.'))
-	validate(records, summary, valuationSummary)
-	return records, valuationSummary
+	summary = readSummary(wb.sheet_by_name('Portfolio Sum.'))
+	validate(records, summary)
+	return records, summary
 
 
 
@@ -63,8 +62,10 @@ def readSummary(ws):
 	"""
 	ws: the excel worksheet for DIF holdings.
 
-	output: [dictionary] a summary containing the portfolio's total values,
-		such as cash, bond, equity, futures, fixed deposit
+	output: [dictionary] a summary containing:
+		1. Subtotals for each type of holdings, such as cash, bond, 
+			equity, futures, fixed deposit.
+		2. The portfolio's NAV, number of units and unit price. 
 	"""
 	def readNthFloat(line, n):
 		"""
@@ -100,47 +101,42 @@ def readSummary(ws):
 			summary[nameMap[line[0]]] = readNthFloat(line, 2)
 		else:
 			summary[line[0]] = readNthFloat(line, 2)
-			
+	
+	# combine the bond sub totals
 	summary['bond'] = summary['bond'] + summary.pop('bond amortization')
 
-	valuationSummary = {}
+	# compute the sum of sub totals, because for Balanced and Guarantee 
+	# fund, there is no net asset value in the Excel sheet, we will use
+	# this sum as the NAV.
+	sumTotals = reduce(lambda x, y: x + y, summary.values(), 0)
+	
 	for line in lines[i+10:]:
 		if isinstance(line[0], float):
 			continue
-
 		if line[0].startswith('Total Units Held at this Valuation'):
-			valuationSummary['number_of_units'] = readNthFloat(line, 1)
+			summary['number_of_units'] = readNthFloat(line, 1)
 		elif line[0].startswith('Unit Price'):
-			valuationSummary['unit_price'] = readNthFloat(line, 1)
+			summary['unit_price'] = readNthFloat(line, 1)
 		elif line[0].startswith('Net Asset Value'):
-			valuationSummary['nav'] = readNthFloat(line, 1)
+			summary['nav'] = readNthFloat(line, 1)
 
-	# for Balanced and Guarantee fund, there is no net asset value
-	# in the Excel sheet, we then sum up all the items in the summary
-	# to derive the NAV.
-	if not 'nav' in valuationSummary:
-		totalNav = 0
-		for value in summary.values():
-			totalNav = totalNav + value 
-		valuationSummary['nav'] = totalNav
+	if not 'nav' in summary:
+		summary['nav'] = sumTotals
 
-	return summary, valuationSummary
+	return summary
 
 
 
-def validate(records, summary, valuationSummary):
+def validate(records, summary):
 	"""
 	When we add up positions in a category, say cash or equity, we want to
 	compare the total to the summary, see whether they match. If they don't
 	match, an exception is raised.
 
 	records: all holding records
-	summary: summary of the record totals
-	valuationSummary: the portfolio's NAV, number of units and unit price.
+	summary: summary of the record totals and the portfolio's NAV, 
+		number of units and unit price.
 	"""
-	# what category of records we want to check
-	typesChecked = ['cash', 'equity', 'bond', 'futures']
-
 	def recordValue(record):
 		if record['type'] in ('cash', 'broker account cash'):
 			return record['book_cost']
@@ -155,10 +151,6 @@ def validate(records, summary, valuationSummary):
 			return record['market_gain_loss']
 
 		elif record['type'] == 'equity':
-			# if record['underlying'] == 'bond': # bond treated as equity
-			# 	return record['quantity'] * record['price'] / 100
-			# else:
-			# 	return record['quantity'] * record['price']
 			return record['market_value']
 
 		else:
@@ -171,8 +163,11 @@ def validate(records, summary, valuationSummary):
 			logger.exception('sumUp() {0}'.format(record))
 			raise
 
-	for recordType in typesChecked:
+	# check subtotals
+	for recordType in ['cash', 'equity', 'bond', 'futures']:
 		if not recordType in summary:
+			# Balanced and Guarantee funds don't have futures positions but
+			# DIF has. If the type is not in summary, skip it.
 			logger.warning('validate(): type \'{0}\' not in summary'.format(recordType))
 			continue
 
@@ -185,12 +180,11 @@ def validate(records, summary, valuationSummary):
 		if abs(diff) > 0.2:
 			raise InconsistentRecordSum('validate(): diff {0} for {1}'.format(diff, recordType))
 
-	diff = valuationSummary['nav']/valuationSummary['number_of_units'] - valuationSummary['unit_price']
-	if abs(diff) > 5e-5:	# after rounded to 4 dicimal places, should be the same
+	# check NAV
+	diff = summary['nav']/summary['number_of_units'] - summary['unit_price']
+	if abs(diff) > 1e-4:	# trustee's precision is 4 dicimal places
 		raise InconsistentNav('validate(): nav={0}, units={1}, unit price={2}'.\
-								format(valuationSummary['nav'], 
-										valuationSummary['number_of_units'],
-										valuationSummary['unit_price']))
+				format(summary['nav'], summary['number_of_units'], summary['unit_price']))
 
 
 

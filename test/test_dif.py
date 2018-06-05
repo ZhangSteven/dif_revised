@@ -54,7 +54,7 @@ class TestDif(unittest2.TestCase):
 						'CL Franklin DIF 2018-05-28(2nd Revised).xls')
 		wb = open_workbook(filename=file)
 		TestDif.records = readHolding(wb.sheet_by_name('Portfolio Val.'))
-		TestDif.summary, TestDif.vsum = readSummary(wb.sheet_by_name('Portfolio Sum.'))
+		TestDif.summary = readSummary(wb.sheet_by_name('Portfolio Sum.'))
 
 	@classmethod
 	def tearDownClass(TestDif):
@@ -105,18 +105,20 @@ class TestDif(unittest2.TestCase):
 
 	def testSummary(self):
 		summary = TestDif.summary
-		self.assertEqual(len(summary), 12)
+		self.assertEqual(len(summary), 15)
 		self.assertAlmostEqual(summary['cash'], 99644780.69, 2)
 		self.assertAlmostEqual(summary['bond'], 3930560458.64)
 		self.assertAlmostEqual(summary['equity'], 219653473.09, 2)
 		self.assertEqual(summary['fixed deposit'], 0)
 		self.assertAlmostEqual(summary['futures'], -411625.88, 2)
-
+		self.assertAlmostEqual(summary['nav'], 4248751534.54, 2)
+		self.assertAlmostEqual(summary['number_of_units'], 362014622.4552, 4)
+		self.assertAlmostEqual(summary['unit_price'], 11.7364)
 
 
 	def testValidate(self):
 		try:
-			validate(TestDif.records, TestDif.summary, TestDif.vsum)
+			validate(TestDif.records, TestDif.summary)
 		except:
 			self.fail('validate() failed')
 

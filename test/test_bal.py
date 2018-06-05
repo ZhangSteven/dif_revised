@@ -39,13 +39,13 @@ class TestBal(unittest2.TestCase):
 						'CLM BAL 2017-07-27.xls')
 		wb = open_workbook(filename=file)
 		TestBal.balrecords = readHolding(wb.sheet_by_name('Portfolio Val.'))
-		TestBal.balsummary, TestBal.balvsum = readSummary(wb.sheet_by_name('Portfolio Sum.'))
+		TestBal.balsummary= readSummary(wb.sheet_by_name('Portfolio Sum.'))
 
 		file = join(get_current_path(), 'samples', 
 						'CLM GNT 2017-10-25.xls')
 		wb = open_workbook(filename=file)
 		TestBal.gntrecords = readHolding(wb.sheet_by_name('Portfolio Val.'))
-		TestBal.gntsummary, TestBal.gntvsum = readSummary(wb.sheet_by_name('Portfolio Sum.'))
+		TestBal.gntsummary= readSummary(wb.sheet_by_name('Portfolio Sum.'))
 
 	@classmethod
 	def tearDownClass(TestBal):
@@ -86,7 +86,7 @@ class TestBal(unittest2.TestCase):
 
 	def testValidateBal(self):
 		try:
-			validate(TestBal.balrecords, TestBal.balsummary, TestBal.balvsum)
+			validate(TestBal.balrecords, TestBal.balsummary)
 		except:
 			self.fail('validate() failed')
 
@@ -122,7 +122,7 @@ class TestBal(unittest2.TestCase):
 
 	def testValidateGnt(self):
 		try:
-			validate(TestBal.gntrecords, TestBal.gntsummary, TestBal.gntvsum)
+			validate(TestBal.gntrecords, TestBal.gntsummary)
 		except:
 			self.fail('validate() failed')
 
@@ -131,7 +131,7 @@ class TestBal(unittest2.TestCase):
 	def testValidateBal2(self):
 		file = join(get_current_path(), 'samples',
 					'CLM BAL 2018-05-31.xls')
-		records, vSummary = readFile(file)
+		records, summary = readFile(file)
 		equityRecords = list(filter(equity, records))
 		self.assertEqual(len(equityRecords), 26)
 
