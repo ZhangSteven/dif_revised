@@ -139,29 +139,24 @@ def validate(records, summary):
 	"""
 	def recordValue(record):
 		if record['type'] in ('cash', 'broker account cash'):
-			return record['book_cost']
+			value = record['book_cost']
 		
 		elif record['type'] == 'bond':
 			if record['accounting'] == 'htm':
-				return record['quantity'] / 100 * record['amortized_cost'] + record['accrued_interest']
+				value = record['quantity'] / 100 * record['amortized_cost'] + record['accrued_interest']
 			else:
-				return record['quantity'] / 100 * record['price'] + record['accrued_interest']
+				value = record['quantity'] / 100 * record['price'] + record['accrued_interest']
 
 		elif record['type'] == 'futures':
-			return record['market_gain_loss']
+			value = record['market_gain_loss']
 
 		elif record['type'] == 'equity':
-			return record['market_value']
+			value = record['market_value']
 
 		else:
 			raise RecordTypeNotSupported('{0}'.format(record))
 
-	def sumUp(total, record):
-		try:
-			return total + record['exchange_rate'] * recordValue(record)
-		except:
-			logger.exception('sumUp() {0}'.format(record))
-			raise
+		return record['exchange_rate'] * value
 
 	# check subtotals
 	for recordType in ['cash', 'equity', 'bond', 'futures']:
@@ -176,7 +171,7 @@ def validate(records, summary):
 		else:
 			tempRecords = filter(lambda r: r['type'] == recordType, records)
 
-		diff = summary[recordType] - reduce(sumUp, tempRecords, 0)
+		diff = summary[recordType] - reduce(lambda t,r: t + recordValue(r), tempRecords, 0)
 		if abs(diff) > 0.2:
 			raise InconsistentRecordSum('validate(): diff {0} for {1}'.format(diff, recordType))
 
