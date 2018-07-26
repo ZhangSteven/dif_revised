@@ -148,7 +148,7 @@ def validate(records, summary):
 				value = record['quantity'] / 100 * record['price'] + record['accrued_interest']
 
 		elif record['type'] == 'futures':
-			value = record['market_gain_loss']
+			value = record['market_gain_loss'] + record['fx_gain_loss_hkd']/record['exchange_rate']
 
 		elif record['type'] == 'equity':
 			value = record['market_value']
