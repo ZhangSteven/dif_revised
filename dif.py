@@ -172,8 +172,8 @@ def validate(records, summary):
 			tempRecords = filter(lambda r: r['type'] == recordType, records)
 
 		diff = summary[recordType] - reduce(lambda t,r: t + recordValue(r), tempRecords, 0)
-		if abs(diff) > 0.2:
-			raise InconsistentRecordSum('validate(): diff {0} for {1}'.format(diff, recordType))
+		# if abs(diff) > 0.2:
+		# 	raise InconsistentRecordSum('validate(): diff {0} for {1}'.format(diff, recordType))
 
 	# check NAV
 	diff = summary['nav']/summary['number_of_units'] - summary['unit_price']
